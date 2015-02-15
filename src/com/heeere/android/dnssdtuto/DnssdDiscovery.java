@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 import javax.jmdns.JmDNS;
@@ -29,18 +30,17 @@ public class DnssdDiscovery extends Activity {
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.main);
+	}
 
-		handler.postDelayed(new Runnable() {
-			public void run() {
-				setUp();
-			}
-		}, 1000);
-
+	@Override
+	protected void onStart() {
+		super.onStart();
+		setUp();
 	}
 
 	/** Called when the activity is first created. */
 
-	// private String type = "_test._tcp.local.";
+	private String type = "_test._tcp.local.";
 	private JmDNS jmdns = null;
 	private ServiceListener listener = null;
 	private ServiceInfo serviceInfo;
@@ -61,32 +61,60 @@ public class DnssdDiscovery extends Activity {
 					Log.d(LOGTAG, "Addr : " + addr);
 					Log.d(LOGTAG, "Hostname : " + hostname);
 					jmdns = JmDNS.create(addr, hostname);
-					jmdns.addServiceListener("_dynamix._tcp.local.",
-							new ServiceListener() {
-								public void serviceResolved(ServiceEvent ev) {
-									Log.d(LOGTAG, "Service resolved: "
-											+ ev.getInfo().getQualifiedName()
-											+ " port:" + ev.getInfo().getPort());
-									Log.d(LOGTAG, "Service Type : "
-											+ ev.getInfo().getType());
-								}
+					listener = new ServiceListener() {
 
-								public void serviceRemoved(ServiceEvent ev) {
-									Log.d(LOGTAG,
-											"Service removed: " + ev.getName());
-								}
+						/*
+						 * Note:This event is only the service added event. The
+						 * service info associated with this event does not
+						 * include resolution information.
+						 */
+						@Override
+						public void serviceAdded(ServiceEvent event) {
+							/*
+							 * Request service information. The information
+							 * about the service is requested and the
+							 * ServiceListener.resolveService method is called
+							 * as soon as it is available.
+							 */
+							jmdns.requestServiceInfo(event.getType(),
+									event.getName(), 1000);
+						}
 
-								public void serviceAdded(ServiceEvent event) {
-									// Required to force serviceResolved to be
-									// called again
-									// (after the first search)
-									jmdns.requestServiceInfo(event.getType(),
-											event.getName(), 1);
-								}
-							});
+						/*
+						 * A service has been resolved. Its details are now
+						 * available in the ServiceInfo record.
+						 */
+						@Override
+						public void serviceResolved(ServiceEvent ev) {
+							Log.d(LOGTAG, "Service resolved: "
+									+ ev.getInfo().getQualifiedName()
+									+ " port:" + ev.getInfo().getPort());
+							Log.d(LOGTAG, "Service Type : "
+									+ ev.getInfo().getType());
+						}
+
+						@Override
+						public void serviceRemoved(ServiceEvent ev) {
+							Log.d(LOGTAG, "Service removed: " + ev.getName());
+						}
+
+					};
+					jmdns.addServiceListener("_dynamix._tcp.local.", listener);
+
+					/**
+					 * Advertising a JmDNS Service Construct a service
+					 * description for registering with JmDNS. 
+					 * Parameters: 
+					 * type : fully qualified service type name, such as _dynamix._tcp.local
+					 * name : unqualified service instance name, such as DynamixInstance 
+					 * port : the local port on which the service runs text string describing the service
+					 * text : text describing the service
+					 */
 					serviceInfo = ServiceInfo.create("_dynamix._tcp.local.",
 							"DynamixInstance", 7433,
 							"Service Advertisement for Ambient Dynamix");
+					
+					/*A Key value map that can be advertised with the service*/
 					serviceInfo.setText(getDeviceDetailsMap());
 					jmdns.registerService(serviceInfo);
 					Log.d(LOGTAG, "Service Type : " + serviceInfo.getType());
@@ -101,27 +129,22 @@ public class DnssdDiscovery extends Activity {
 	}
 
 	@Override
-	protected void onStart() {
-		super.onStart();
-		// new Thread(){public void run() {setUp();}}.start();
-	}
-
-	@Override
 	protected void onStop() {
+		//Unregister services
 		if (jmdns != null) {
-			// if (listener != null) {
-			// jmdns.removeServiceListener(type, listener);
-			// listener = null;
-			// }
+			if (listener != null) {
+				jmdns.removeServiceListener(type, listener);
+				listener = null;
+			}
 			jmdns.unregisterAllServices();
 			try {
 				jmdns.close();
 			} catch (IOException e) {
-				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 			jmdns = null;
 		}
+		//Release the lock
 		lock.release();
 		super.onStop();
 	}
@@ -131,21 +154,19 @@ public class DnssdDiscovery extends Activity {
 		WifiInfo wifiInfo = wifiManager.getConnectionInfo();
 		int ipAddress = wifiInfo.getIpAddress();
 		InetAddress address = null;
-
 		try {
-			address = InetAddress.getByName(String.format("%d.%d.%d.%d",
-					(ipAddress & 0xff), (ipAddress >> 8 & 0xff),
+			address = InetAddress.getByName(String.format(Locale.ENGLISH,
+					"%d.%d.%d.%d", (ipAddress & 0xff), (ipAddress >> 8 & 0xff),
 					(ipAddress >> 16 & 0xff), (ipAddress >> 24 & 0xff)));
 		} catch (UnknownHostException e) {
 			e.printStackTrace();
 		}
-
 		return address;
 	}
 
 	private Map<String, String> getDeviceDetailsMap() {
-		Map<String, String> infomap = new HashMap<String, String>();
-		infomap.put("device_name", "device_name");
-		return infomap;
+		Map<String, String> info = new HashMap<String, String>();
+		info.put("device_name", "");
+		return info;
 	}
 }
